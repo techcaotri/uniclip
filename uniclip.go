@@ -10,7 +10,6 @@ import (
 	"encoding/gob"
 	"errors"
 	"fmt"
-	"golang.org/x/crypto/ssh/terminal"
 	"io"
 	"io/ioutil"
 	"net"
@@ -21,6 +20,8 @@ import (
 	"strings"
 	"syscall"
 	"time"
+
+	"golang.org/x/crypto/ssh/terminal"
 
 	"golang.org/x/crypto/scrypt"
 )
@@ -165,7 +166,7 @@ func ConnectToServer(address string) {
 func MonitorLocalClip(w *bufio.Writer) {
 	for {
 		localClipboard = getLocalClip()
-		//debug("clipboard changed so sending it. localClipboard =", localClipboard)
+		// debug("clipboard changed so sending it. localClipboard =", localClipboard)
 		err := sendClipboard(w, localClipboard)
 		if err != nil {
 			handleError(err)
@@ -205,7 +206,7 @@ func MonitorSentClips(r *bufio.Reader) {
 		if foreignClipboard == "" {
 			continue
 		}
-		//foreignClipboard = decompress(foreignClipboardBytes)
+		// foreignClipboard = decompress(foreignClipboardBytes)
 		setLocalClip(foreignClipboard)
 		localClipboard = foreignClipboard
 		debug("rcvd:", foreignClipboard)
@@ -226,8 +227,8 @@ func sendClipboard(w *bufio.Writer, clipboard string) error {
 	var clipboardBytes []byte
 	var err error
 	clipboardBytes = []byte(clipboard)
-	//clipboardBytes = compress(clipboard)
-	//fmt.Printf("cmpr: %x\ndcmp: %x\nstr: %s\n\ncmpr better by %d\n", clipboardBytes, []byte(clipboard), clipboard, len(clipboardBytes)-len(clipboard))
+	// clipboardBytes = compress(clipboard)
+	// fmt.Printf("cmpr: %x\ndcmp: %x\nstr: %s\n\ncmpr better by %d\n", clipboardBytes, []byte(clipboard), clipboard, len(clipboardBytes)-len(clipboard))
 	if secure {
 		clipboardBytes, err = encrypt(password, clipboardBytes)
 		if err != nil {
@@ -337,17 +338,33 @@ func runGetClipCommand() string {
 	case "windows": //nolint // complains about literal string "windows" being used multiple times
 		cmd = exec.Command("powershell.exe", "-command", "Get-Clipboard")
 	default:
-		if _, err = exec.LookPath("xclip"); err == nil {
-			cmd = exec.Command("xclip", "-out", "-selection", "clipboard")
-		} else if _, err = exec.LookPath("xsel"); err == nil {
-			cmd = exec.Command("xsel", "--output", "--clipboard")
-		} else if _, err = exec.LookPath("wl-paste"); err == nil {
-			cmd = exec.Command("wl-paste", "--no-newline")
-		} else if _, err = exec.LookPath("termux-clipboard-get"); err == nil {
-			cmd = exec.Command("termux-clipboard-get")
+		// Check if we're in Wayland session
+		if os.Getenv("WAYLAND_DISPLAY") != "" {
+			if _, err = exec.LookPath("wl-paste"); err == nil {
+				cmd = exec.Command("wl-paste", "--no-newline")
+			} else if _, err = exec.LookPath("xclip"); err == nil {
+				cmd = exec.Command("xclip", "-out", "-selection", "clipboard")
+			} else if _, err = exec.LookPath("xsel"); err == nil {
+				cmd = exec.Command("xsel", "--output", "--clipboard")
+			} else if _, err = exec.LookPath("termux-clipboard-get"); err == nil {
+				cmd = exec.Command("termux-clipboard-get")
+			} else {
+				handleError(errors.New("sorry, uniclip won't work if you don't have xsel, xclip, wayland or Termux installed :(\nyou can create an issue at https://github.com/quackduck/uniclip/issues"))
+				os.Exit(2)
+			}
 		} else {
-			handleError(errors.New("sorry, uniclip won't work if you don't have xsel, xclip, wayland or Termux installed :(\nyou can create an issue at https://github.com/quackduck/uniclip/issues"))
-			os.Exit(2)
+			if _, err = exec.LookPath("xclip"); err == nil {
+				cmd = exec.Command("xclip", "-out", "-selection", "clipboard")
+			} else if _, err = exec.LookPath("xsel"); err == nil {
+				cmd = exec.Command("xsel", "--output", "--clipboard")
+			} else if _, err = exec.LookPath("wl-paste"); err == nil {
+				cmd = exec.Command("wl-paste", "--no-newline")
+			} else if _, err = exec.LookPath("termux-clipboard-get"); err == nil {
+				cmd = exec.Command("termux-clipboard-get")
+			} else {
+				handleError(errors.New("sorry, uniclip won't work if you don't have xsel, xclip, wayland or Termux installed :(\nyou can create an issue at https://github.com/quackduck/uniclip/issues"))
+				os.Exit(2)
+			}
 		}
 	}
 	if out, err = cmd.Output(); err != nil {
@@ -376,17 +393,33 @@ func setLocalClip(s string) {
 	case "windows":
 		copyCmd = exec.Command("clip")
 	default:
-		if _, err := exec.LookPath("xclip"); err == nil {
-			copyCmd = exec.Command("xclip", "-in", "-selection", "clipboard")
-		} else if _, err = exec.LookPath("xsel"); err == nil {
-			copyCmd = exec.Command("xsel", "--input", "--clipboard")
-		} else if _, err = exec.LookPath("wl-copy"); err == nil {
-			copyCmd = exec.Command("wl-copy")
-		} else if _, err = exec.LookPath("termux-clipboard-set"); err == nil {
-			copyCmd = exec.Command("termux-clipboard-set")
+		// Check if we're in Wayland session
+		if os.Getenv("WAYLAND_DISPLAY") != "" {
+			if _, err := exec.LookPath("wl-copy"); err == nil {
+				copyCmd = exec.Command("wl-copy")
+			} else if _, err := exec.LookPath("xclip"); err == nil {
+				copyCmd = exec.Command("xclip", "-in", "-selection", "clipboard")
+			} else if _, err = exec.LookPath("xsel"); err == nil {
+				copyCmd = exec.Command("xsel", "--input", "--clipboard")
+			} else if _, err = exec.LookPath("termux-clipboard-set"); err == nil {
+				copyCmd = exec.Command("termux-clipboard-set")
+			} else {
+				handleError(errors.New("sorry, uniclip won't work if you don't have xsel, xclip, wayland or Termux:API installed :(\nyou can create an issue at https://github.com/quackduck/uniclip/issues"))
+				os.Exit(2)
+			}
 		} else {
-			handleError(errors.New("sorry, uniclip won't work if you don't have xsel, xclip, wayland or Termux:API installed :(\nyou can create an issue at https://github.com/quackduck/uniclip/issues"))
-			os.Exit(2)
+			if _, err := exec.LookPath("xclip"); err == nil {
+				copyCmd = exec.Command("xclip", "-in", "-selection", "clipboard")
+			} else if _, err = exec.LookPath("xsel"); err == nil {
+				copyCmd = exec.Command("xsel", "--input", "--clipboard")
+			} else if _, err = exec.LookPath("wl-copy"); err == nil {
+				copyCmd = exec.Command("wl-copy")
+			} else if _, err = exec.LookPath("termux-clipboard-set"); err == nil {
+				copyCmd = exec.Command("termux-clipboard-set")
+			} else {
+				handleError(errors.New("sorry, uniclip won't work if you don't have xsel, xclip, wayland or Termux:API installed :(\nyou can create an issue at https://github.com/quackduck/uniclip/issues"))
+				os.Exit(2)
+			}
 		}
 	}
 	in, err := copyCmd.StdinPipe()
